@@ -9,7 +9,7 @@ library(emtools)
 # Set up working directory and source imported code ---------------------------------------------------------
 
 script_dir <- this.path::this.dir()
-wd <- dirname(dirname(dirname(script_dir)))
+wd <- dirname(dirname(script_dir))
 # set the working directory as FTT folder
 setwd(wd)
 
@@ -17,40 +17,45 @@ setwd(wd)
 ## Functons and scripts copied from ExeterUQ https://github.com/BayesExeter/ExeterUQ &
 ## https://github.com/JSalter90/UQ
 # source code paths
-uq_path <- "Emulation/code/emulation_code/imported_code/UQ/Gasp.R"
+uq_path <- "Emulation/code/imported_code/UQ/Gasp.R"
 source(uq_path) ### Created by James Salter
 # reset working dir
 setwd(wd)
 
 # Set up config file & paths ---------------------------------------------------
-
 # import config
 config_path <- "Emulation/code/config/config.json"
-config <- jsonlite::fromJSON(config_path) 
+config <- jsonlite::fromJSON(config_path)
 
 # main paths TODO: are any unnecessary
-data_path <- "Emulation/data"
-input_path <- config$scen_levels_path
+data_path <- "Emulation/data/"
+input_path <- paste0(data_path, "lhc_scenarios.csv")
+output_path <- paste0(data_path, "emulator_inputs.csv")
+
+
 input_path_rescaled <- paste0(substr(input_path, 1, nchar(input_path)-4), "_rescaled.csv")
 
-
 # Data paths
-emul_path <- "Emulation/data/emulators"
+emul_path <- "Emulation/data/emulators/"
+valid_plot_path <- "Emulation/data/validation/plots/"
+valid_model_path <- "Emulation/data/validation/models/"
+figures_path <- "Emulation/data/figures/"
+output_dir <- "Emulation/data/predictions/"
 
-## Output paths
-output_dir <- paste0(data_path, "/predictions/")
+# create dirs if doesn't exist
+paths <- c(emul_path, valid_plot_path, valid_model_path, figures_path, output_dir)
+invisible(lapply(paths, function(p) {
+  if (!dir.exists(p)) dir.create(p, recursive = TRUE)
+}))
+
+
+
 
 # Global
 gbl_sa_filename <- "sa_gbl.csv"
 
-gbl_plot_title <- "sa_gbl_fig2.png"
-gbl_plot_path <- paste0(data_path, "/figures/", gbl_plot_title)
-
-# India
-in_sa_filename <- "sa_in.csv"
-
-in_plot_title <- "sa_in_fig3.png"
-in_plot_path <- paste0(data_path, "/figures/", in_plot_title)
+gbl_plot_title <- "sa_gbl.png"
+gbl_plot_path <- paste0(figures_path, gbl_plot_title)
 
 
 
@@ -116,20 +121,7 @@ oaatSensvarSummaryPlot <- function(oat_sens_mat,
   normsens <- normalize(t(oat_sens_mat))  # rows: params, cols: outputs
   normsens_mean <- rowMeans(normsens)
   
-  pol_suffix <- c("subsidies", "carbon prices", "phaseouts")
 
-  # drop _pol parameters based on normalized sensitivity
-  drop_pol <- grepl(paste(pol_suffix, collapse='|'), names(normsens_mean)) &
-    (normsens_mean <= threshold)
-  
-  # filter oat_sens_mat and normsens to keep only relevant params
-  if (any(drop_pol)) {
-    oat_sens_mat <- oat_sens_mat[, !drop_pol, drop = FALSE]
-    normsens <- normsens[!drop_pol, , drop = FALSE]
-    normsens_mean <- normsens_mean[!drop_pol]
-  }
-  
-  
   # 1) now extract names from the filtered matrix
   ynames <- rownames(oat_sens_mat)    # outputs
   xnames <- colnames(oat_sens_mat)    # parameters
@@ -181,33 +173,17 @@ oaatSensvarSummaryPlot <- function(oat_sens_mat,
 
 # Set up params and files for SA ------------------------------------------
 
-# Reference grid, policies at 0 and techecon params at mean (0.5)
+# Reference grid, default at mean (0.5)
 # alter these fixed values to perform SA elsewhere in input space
-pol_fixed_value <- 0
-techeco_fixed_value <- 0.5
-ref_pol <- setNames(rep(pol_fixed_value, 15), colnames(inputs[1:15])) 
-ref_techeco <- setNames(rep(techeco_fixed_value, 14), colnames(inputs[16:29]))
-ref <- c(ref_pol, ref_techeco)
+fixed_value <- 0.5
+ref <- setNames(rep(fixed_value, 9), colnames(inputs)) 
 
 # List all your .rds files
 rds_files_all <- list.files(emul_path, pattern = "\\.rds$", full.names = TRUE)
 
-# SA on GBL emissions & capacites
-global_param_files <- rds_files_all[c(c(1:3), c(19:24))]
-global_param_files <- rds_files_all[grepl("GBL", rds_files_all)]
-
-
-# SA on for India - performed in different subsection of input space
-ref_pol['IN_phase_pol'] <- 0.5
-ref_pol['IN_price_pol'] <- 0.5
-ref_pol['IN_cp_pol'] <- 0.5
-
-india_param_files <- rds_files_all[grepl("IN", rds_files_all)]
-
-
 
 # Global sensitivity analysis ---------------------------------------------
-
+global_param_files <- rds_files_all
 
 # Read them into a named list
 global_params_list <- setNames(
@@ -222,21 +198,9 @@ global_sens_list <- lapply(global_params_list, function(em) {
 
 # Stack into a matrix - THIS NEEDS EDITING IF VARS ARE EDITED
 global_sens_mat <- do.call(rbind, global_sens_list)
-rownames(global_sens_mat) <- c("Emissions 2030", "Emissions 2040", "Emissions 2050",
-                               "Onshore 2030", "Onshore 2040", "Onshore 2050",
-                                "Solar 2030", "Solar 2040", "Solar 2050")
-colnames(global_sens_mat) <- c("US phaseouts", "US subsidies", "US carbon prices",
-                               "CN phaseouts", "CN subsidies", "CN carbon prices",
-                               "IN phaseouts", "IN subsidies", "IN carbon prices",
-                               "RGS phaseouts", "RGS subsidies", "RGS carbon prices",
-                               "RGN phaseouts", "RGN subsidies", "RGN carbon prices",
-                               "learning rate: solar", "learning rate: wind",
-                               "lifetime: solar", "lifetime: wind", 
-                               "lead time: onshore", "lead time: solar",
-                               "grid connection time", 
-                               "cannibalisation: wind", "cannibalisation: solar",
-                               "discount rate", "electricity demand", "gas prices (ccgt)", 
-                               "coal prices", "technical potential")
+# rownames(global_sens_mat) <- c("Emissions 2030", "Emissions 2040")
+# colnames(global_sens_mat) <- c("US phaseouts", "US subsidies")
+
 # Save sensitivity matrix
 write.csv(global_sens_mat,
           file = paste0(output_dir, gbl_sa_filename),
@@ -246,56 +210,6 @@ write.csv(global_sens_mat,
 png(gbl_plot_path, width = 1400, height = 1100, res = 150)
 oaatSensvarSummaryPlot(global_sens_mat, threshold = 0.01)
 dev.off()
-
-
-# India sensitivity analysis ----------------------------------------------
-
-
-# Read them into a named list
-india_param_list <- setNames(
-  lapply(india_param_files, readRDS),
-  tools::file_path_sans_ext(basename(india_param_files))
-)
-
-# Run OAT sensitivity on each emulator
-india_param_list <- lapply(india_param_list, function(em) {
-  oat_sens_pretrained(ref, em, n = 30)
-})
-
-# Stack into a matrix - THIS NEEDS EDITING IF VARS ARE EDITED
-india_sens_mat <- do.call(rbind, india_param_list)
-rownames(india_sens_mat) <- c("Emissions 2030", "Emissions 2040", "Emissions 2050",
-                                 "Onshore 2030",  "Onshore 2040", "Onshore 2050", 
-                                 "Solar 2030", "Solar 2040", "Solar 2050",
-                                 "Electricity Price 2030", "Electricity Price 2040", "Electricity Price 2050",
-                                  "Renew. Share 2030", "Renew. Share 2040", "Renew. Share 2050")
-                                
-                                # "Onshore Generation 2030", "Onshore Generation 2040", "Onshore Generation 2050",
-                                # "Solar PV Generation 2030", "Solar PV Generation 2040", "Solar PV Generation 2050",
-colnames(india_sens_mat) <- c("US phaseouts", "US subsidies", "US carbon prices",
-                               "CN phaseouts", "CN subsidies", "CN carbon prices",
-                               "IN phaseouts", "IN subsidies", "IN carbon prices",
-                               "RGS phaseouts", "RGS subsidies", "RGS carbon prices",
-                               "RGN phaseouts", "RGN subsidies", "RGN carbon prices",
-                               "learning rate: solar", "learning rate: wind",
-                               "lifetime: solar", "lifetime: wind", 
-                               "lead time: onshore", "lead time: solar",
-                               "grid connection time", 
-                               "cannibalisation: wind", "cannibalisation: solar",
-                               "discount rate", "electricity demand", "gas prices (ccgt)", 
-                               "coal prices", "technical potential")
-
-# Save sensitivity matrix
-write.csv(india_sens_mat,
-          file = paste0(output_dir, in_sa_filename),
-          row.names = F)
-
-
-# Plot and save - FIG 3
-png(in_plot_path, width = 1400, height = 1100, res = 150)
-oaatSensvarSummaryPlot(india_sens_mat, threshold = 0.01)
-dev.off()
-
 
 
 
