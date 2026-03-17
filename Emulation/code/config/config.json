@@ -1,0 +1,101 @@
+{ "Nscens": 501,
+  "scens_run": [0, 2],
+
+  "run_compare_scenarios": false,
+  "run_generate_scenarios": false,
+  "run_ambition_vary": false,
+  "run_run_simulations": false,
+  "run_output_manipulation": true,
+
+  "ranges": {
+    "learning_solar": [-0.405, -0.233],
+    "learning_wind": [-0.276, -0.112],
+    "lifetime_solar": [25, 35],
+    "lifetime_wind": [25, 35],
+    "lead_onshore": [1, 3],
+    "lead_solar": [0.5, 3],
+    "lead_commission": [0, 1],
+    "cr_wind": [-2, -0.1],
+    "cr_solar": [-3.3, -0.2],
+    "discr": [0, 1],
+    "elec_demand": [0, 1],
+    "ccgt_price": [0, 1],
+    "coal_price": [0, 1],
+    "tech_potential": [0, 1]
+  },
+
+  "regions": ["US", "CN", "IN", "RGS", "RGN"],
+  "reg_rollback" : ["US"],
+  "region_groups": {
+    "RGN": ["BE", "DK", "DE", "EL", "ES", "FR", "IE", "IT", "LX", "NL", "AT", "PT", "FI", "SW", "UK", "CZ", 
+    "EN", "CY", "LV", "LT", "HU", "MT", "PL", "SI", "SK", "BG", "RO", "HR", "NO", "CH", "IS",
+       "JA", "TR", "MK", "CA", "AU", "NZ", "RS", "RA", "KR"],
+    "RGS": ["SA", "BR", "MX", "AR", "CO", "LA", "TW", "ID", "AS", "OP", "RW", "UE", "SD", "NG",
+    "ON", "OC", "MY", "KZ", "AN", "AC", "AW", "AE", "ZA", "EG", "DC", "KE", 
+    "UA", "PK"],
+    "GN": ["BE", "DK", "DE", "EL", "ES", "FR", "IE", "IT", "LX", 
+    "NL", "AT", "PT", "FI", "SW", "UK", "CZ", "EN", "CY", "LV", "LT",
+    "HU", "MT", "PL", "SI", "SK", "BG", "RO", "NO", "CH", "IS",
+    "HR", "TR", "MK", "US", "JA", "CA", "AU", "NZ", "RS", "RA", "CN", "KR"] 
+  },
+
+  "comparison_path": "Emulation/data/comparisons/S0_S3_comparison.xlsx",
+  "scen_levels_path": "Emulation/data/scenarios/S3_scen_levels_test.csv",
+  "base_master_path": "Inputs/_Masterfiles/FTT-P/FTT-P-22x71_2024_S0.xlsx",
+  "ambitious_master_path": "Inputs/_Masterfiles/FTT-P/FTT-P-22x71_2024_S3.xlsx",
+  "carbon_price_path": "Emulation/data/variable_data/carbon_price/REPPX_amb.csv",
+  "batch_output_dir": "output/batches/",
+  "output_path": "Emulation/data/runs/",
+
+
+  "params": {
+    "general": {
+      "phase_pol": ["MEWR"],
+      "price_pol": ["MEFI", "MEWT"]
+    },
+    "special": {
+      "cp_pol": ["REPPX"]
+    }
+  },
+  
+  "updates_config": {
+    "Solar PV": {
+      "learning_solar": 16,
+      "lifetime_solar": 9,
+      "lead_solar": 10,
+      "cr_col": 24
+    },
+    "Onshore": {
+      "learning_wind": 16,
+      "lifetime_wind": 9,
+      "lead_onshore": 10,
+      "cr_col": 24
+    },
+    "CCGT": {
+      "ccgt_price": 5,
+      "std_col": 6
+    },
+    "Coal": {
+      "coal_price": 5,
+      "std_col": 6
+    },
+    "Discount Rate": {
+      "discr": 17
+    }
+  },
+
+  "scen_code": "S3",
+  "scenarios": {"base": "S0", "ambitious": "S3"},
+  "round_decimals": 3,
+  "output_dir": "Inputs",
+  "vars_to_compare": ["MEFI", "MEWT", "MEWR"],
+  "vars_non_costmatrix": ["MEWD", "MCSC"],
+  "general_vars": ["MCSC"],
+  "batch_size": 50,
+  "cost_matrix_var": "BCET",
+  "cost_matrix_structure": {
+    "regions": 71,
+    "data_length": 34,
+    "tech_number": 22
+  }  
+}
