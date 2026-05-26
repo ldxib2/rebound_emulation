@@ -13,7 +13,7 @@ library(ggpattern)
 # Set up config file & paths --------------------------------------------
 
 script_dir <- this.path::this.dir()
-wd <- dirname(dirname(dirname(script_dir)))
+wd <- dirname(dirname(script_dir))
 # set the working directory as FTT folder
 setwd(wd)
 
@@ -23,15 +23,15 @@ config <- jsonlite::fromJSON(config_path)
 
 # main paths TODO: are any unnecessary
 data_path <- "Emulation/data/"
+## Output paths
+output_dir <- paste0(data_path, "/predictions/")
 
-# Prediction file names
-out_in_preds <- "predictions/preds_IN_old.csv"
-out_gbl_preds <- "predictions/preds_GBL_old.csv"
+# Prediction file names EDIT FOR PLOT DATA
+gbl_preds <- "preds_GBL_lhs.csv"
 
 # Load emulator prediction data
 df_gbl <- vroom(paste0(data_path, out_gbl_preds))
-df_in <- vroom(paste0(data_path, out_in_preds))
-
+df_gbl <- final_results_df
 
 
 # Policy factors function -------------------------------------------------
@@ -41,98 +41,34 @@ add_policy_factors <- function(df){
   df %>% 
   # Create US policy factor variable
   mutate(
-    IN_subsidy = factor(
+    reb_level_tri = factor(
       case_when(
-        IN_price_pol == 0 ~ "Subsidy - None",
-        IN_price_pol == 0.5 ~ "Subsidy - Mid",
-        IN_price_pol == 1  ~ "Subsidy - High",
-        TRUE                ~ NA_character_
+        reb_switch == 0 ~ "no rebound",
+        reb_switch == 1 & 
+          heat_rebound == 0 & 
+          trans_rebound == 0 ~ "low rebound",
+        reb_switch == 1 & 
+          heat_rebound == 1 & 
+          trans_rebound == 1 ~ "high rebound",
       ),
-      #levels = c("Subsidy - None", "Subsidy - Mid", "Subsidy - High")), # reversed for grid order
-      levels = c("Subsidy - High", "Subsidy - Mid", "Subsidy - None")
-    ), # reversed for grid order
-    
-    IN_cp = factor(
+      levels = c("no rebound", "low rebound", "high rebound")
+      ),
+    reb_active = factor(
       case_when(
-        IN_cp_pol == 1  ~ "CP - High",
-        IN_cp_pol == 0.5 ~ "CP - Mid",
-        IN_cp_pol == 0 ~ "CP - None"
+        reb_switch == 0 ~ "no rebound",
+        reb_switch == 1 ~ "rebound"
       ),
-      levels = c( "CP - High", "CP - Mid", "CP - None")
+      levels = c("no rebound", "rebound")
     ),
-    # levels = c("CP - None", "CP - Mid", "CP - High")),
-    
-    IN_phase = factor(
-      case_when(
-        IN_phase_pol == 0 ~ "Phaseouts - None",
-        IN_phase_pol == 0.5 ~ "Phaseouts - Mid",
-        IN_phase_pol == 1  ~ "Phaseouts - High"
-        
-      ),
-      levels = c("Phaseouts - None", "Phaseouts - Mid", "Phaseouts - High"),
-      #levels = c("Phaseouts - High" , "Phaseouts - Mid", "Phaseouts - None")
+        turn_level_bi = factor(
+          case_when(
+            trans_turnover == 0 &
+              heat_turnover == 0 ~ "low turnover",
+            trans_turnover == 1 &
+              heat_turnover == 1 ~ "high turnover"
+          ),
+          levels = c("low turnover", "high turnover")
     ),
-    `Policy Combination` = factor (
-      case_when(
-      IN_phase_pol == 0 & IN_cp_pol == 0 & IN_price_pol == 0 ~ 'Baseline',
-      IN_phase_pol == 0 & IN_cp_pol == 1 & IN_price_pol == 1 ~ 'Sub-CP',
-      IN_phase_pol == 1 & IN_cp_pol == 1 & IN_price_pol == 0 ~ 'CP-Phaseout',
-      IN_phase_pol == 1 & IN_cp_pol == 0 & IN_price_pol == 1 ~ 'Sub-Phaseout',
-      IN_phase_pol == 1 & IN_cp_pol == 1 & IN_price_pol == 1 ~ 'CP-Sub-Phaseout'
-      ),
-      levels = c('Baseline', 'Sub-CP', 'CP-Phaseout', 'Sub-Phaseout', 'CP-Sub-Phaseout'),
-  ),
-    CN_phase = factor(
-      case_when(
-        CN_phase_pol == 0 ~ "Baseline",
-        CN_phase_pol == 0.5 ~ "Mid-level Policy",
-        CN_phase_pol == 1  ~ "High-level Policy"
-        
-      ),
-      levels = c("High-level Policy", "Mid-level Policy", "Baseline"),
-      #levels = c("High-lvel Policy", "Mid-level Policy", "Current Policy"),
-    ),
-    `Wind Learning` = factor(
-      case_when(
-        learning_wind < 0.3 ~ "Low",
-        learning_wind >= 0.3 & learning_wind < 0.6 ~ "Medium",
-        learning_wind >= 0.6 ~ "High"
-      ),
-      levels = c("Low", "Medium", "High")),
-    `Solar Learning` = factor(
-      case_when(
-        learning_solar < 0.3 ~ "Low",
-        learning_solar >= 0.3 & learning_solar < 0.6 ~ "Medium",
-        learning_solar >= 0.6 ~ "High"
-      ),
-      levels = c("Low", "Medium", "High")
-      
-    ),
-    lead_onsh = factor(
-      case_when(
-        lead_onshore < 0.34 ~ "Low onshore lead",
-        lead_onshore >= 0.34 & lead_onshore < 0.67 ~ "Medium onshore lead",
-        lead_onshore >= 0.67 ~ "High onshore lead"
-      ),
-      levels = c("Low onshore lead", "Medium onshore lead", "High onshore lead")
-      #levels = c("High onshore lead", "Medium onshore lead", "Low onshore lead")
-      
-    ),
-   demand = factor(
-      case_when(
-        elec_demand < 0.5 ~ "Low demand",
-        # elec_demand >= 0.33 & elec_demand < 0.66 ~ "Mid demand",
-        elec_demand >= 0.5 ~ "High demand"
-      ),
-      levels = c("Low demand", "High demand") # Mid demand
-    ),
-   lead_sol = factor(
-     case_when(
-       lead_solar < 0.5 ~ "Short",
-       lead_solar >= 0.5 ~ "Long"
-     ),
-     levels = c("Short", "Long")
-   ),
    leads = factor(
      case_when(
        lead_solar < 0.5 & lead_onshore < 0.5 ~ "Short tech lead",
@@ -140,73 +76,36 @@ add_policy_factors <- function(df){
      ),
      levels = c("Short tech lead", "Long tech lead")
    ),
-   # lead_total = factor(
-   #   case_when(
-   #     lead_solar < 0.33 & lead_onshore < 0.33 & lead_commission < 0.33 ~ "Fast lead times",
-   #     lead_solar >= 0.33 & lead_solar < 0.66 &
-   #       lead_onshore >= 0.33 & lead_onshore < 0.66 &
-   #       lead_commission >= 0.33 & lead_commission < 0.66 ~ "Medium lead times",
-   #     lead_solar >= 0.66 & lead_onshore >= 0.66 & lead_commission >= 0.66 ~ "Slow lead times"
-   #   ),
-   #   levels = c("Fast lead times", "Medium lead times", "Slow lead times")
-     #levels = c("Slow rollout", "Medium rollout", "Fast rollout" )
-   #),
-     lead_total = factor(
-       case_when(
-         lead_solar < 0.5 & lead_onshore < 0.5 & lead_commission < 0.5 ~ "Fast lead times",
-         lead_solar >= 0.5 & lead_onshore >= 0.5 & lead_commission >= 0.5 ~ "Slow lead times"
-       ),
-       #levels = c("Fast rollout", "Slow rollout")
-       levels = c("Slow lead times", "Fast lead times")
-   ),
-  cr_total = factor(
-    case_when(
-      cr_wind < 0.5 & cr_solar < 0.5 ~ "Low Cannibalisation",
-      cr_solar >= 0.5 & cr_wind >= 0.5 ~ "High Cannibalisation"
-    ),
-    levels = c("Low Cannibalisation", "High Cannibalisation")
-  ),
-   grid = factor(
+   cr_total = factor(
      case_when(
-       lead_commission < 0.5  ~ "Short commission",
-       lead_commission >= 0.5 ~ "Long commission"
+       cr_wind < 0.5 & cr_solar < 0.5 ~ "Low Cannibalisation",
+       cr_solar >= 0.5 & cr_wind >= 0.5 ~ "High Cannibalisation"
      ),
-     levels = c("Short commission", "Long commission")
+     levels = c("Low Cannibalisation", "High Cannibalisation")
    ),
-   # demand = factor(
-   #   case_when(
-   #     elec_demand < 0.33 ~ "Low Demand",
-   #     elec_demand >= 0.5 ~ "High Demand"
-   #   ),
-   #   levels = c("Low Demand", "High Demand")
-   # ),
-    discount_rate = factor(
-      case_when(
-        discr >= 0.5 ~ 'High Discount Rate',
-        # discr < 0.66 & discr >= 0.33 ~ 'Mid DR',
-        discr < 0.5 ~ 'Low Discount Rate'
-      ),
-      #levels = c('High Discount Rate', 'Low Discount Rate')
-      levels = c('Low Discount Rate', 'High Discount Rate')
-      
-    ),
-    coal_p = factor(
-      case_when(
-        coal_price < 0.5 ~ "Low Coal Price",
-        # coal_price >= 0.3 & coal_price < 0.6 ~ "Medium Price",
-        coal_price >= 0.5 ~ "High Coal Price"
-      ),
-      levels = c("Low Coal Price", "High Coal Price")
-    ),
-    
-    tech_p = factor(
-      case_when(
-        tech_potential < 0.3 ~ "Low",
-        tech_potential >= 0.3 & tech_potential < 0.6 ~ "Medium",
-        tech_potential >= 0.6 ~ "High"
-      ),
-      levels = c("Low", "Medium", "High")
-    )
+   turn_level = factor(
+     case_when(
+       trans_turnover < 0.5 & heat_turnover < 0.5 ~ "low turnover",
+       trans_turnover >= 0.5 & heat_turnover >= 0.5 ~ "high turnover"
+     ),
+     levels = c("low turnover", "high turnover")
+   ),
+   reb_level = factor(
+     case_when(
+       trans_rebound < 0.5 & heat_rebound < 0.5 ~ "low rebound",
+       trans_rebound >= 0.5 & heat_rebound >= 0.5 ~ "high rebound"
+     ),
+     levels = c("low rebound", "high rebound")
+   ),
+   power_transition = factor(
+     case_when(
+       cr_total == "High Cannibalisation" &
+         leads == "Long tech lead" ~ "slow transition",
+       cr_total == "Low Cannibalisation" &
+         leads == "Short tech lead" ~ "fast transition"
+     ),
+     levels = c("slow transition", "fast transition")
+   ),    
   )
 }
 
@@ -218,67 +117,26 @@ add_policy_factors <- function(df){
 df_gbl <- add_policy_factors(df_gbl)
 
 
-# Emissions GLOBAL --------------------------------------------------------
+# Emissions GLOBAL HI/LOW REBOUND vs NO REBOUND  --------------------------------------------------------
 
 
 # Statistics for plot
 summary_stats_3 <- df_gbl %>%
-  subset(emulator %in% c("MEWE_GBL_2030", "MEWE_GBL_2050")) %>%
-  filter(!is.na(cr_total) & !is.na(lead_total)) %>%
-  filter(CN_phase != 'High-level Policy') %>%
-  
-  # Create US policy factor variable
-  mutate(
-    year = factor(
-      case_when(
-        emulator == "MEWE_GBL_2030" ~ "2030",
-        emulator == "MEWE_GBL_2050" ~ "2050"
-      ),
-      levels = c("2030",  "2050"))) %>%
-  group_by(CN_phase, lead_total, cr_total, emulator) %>%
-  summarise(median_pred = median(prediction/1000, na.rm = TRUE),
-            p05_pred = quantile(prediction/1000, 0.05, na.rm = TRUE),
-            p95_pred = quantile(prediction/1000, 0.95, na.rm = TRUE),
-            .groups = 'drop') %>%
-  # Change negative values to 0 for plotting
-  # Negative values come from the modeled increase in negative emissions technologies
-  mutate(
-    median_pred = pmax(median_pred, 0))
-
-
+  group_by(reb_level, turn_level) %>%
+  summarise(median_pred = mean(prediction, na.rm = TRUE)) 
 
 # Plot
 p <- df_gbl %>%
-  subset(emulator %in% c("MEWE_GBL_2030",'MEWE_GBL_2050')) %>%
-  filter(!is.na(cr_total) & !is.na(lead_total)) %>%
-  filter(CN_phase != 'High-level Policy') %>%
-  mutate(
-    year = factor(case_when(
-      emulator == "MEWE_GBL_2030" ~ "2030",
-      emulator == "MEWE_GBL_2050" ~ "2050"
-    ), levels = c("2030", "2050")),
-    prediction = prediction/1000
-  ) %>%
-  ggplot(aes(x = prediction, fill = year)) +
-  
-  # # Fixed geom_vline calls - NO extra commas!
-  # geom_vline(data = summary_stats_3, aes(xintercept = p05_pred),
-  #            color = "black", linetype = "dotted", size = 0.8, show.legend = FALSE) +
-  # geom_vline(data = summary_stats_3, aes(xintercept = p95_pred), 
-  #            color = "black", linetype = "dotted", size = 0.8, show.legend = FALSE) +
-  # 
-  # Fixed geom_density - remove conflicting fill=year
+  ggplot(aes(x = prediction, fill = reb_level)) +
   geom_density(alpha = 0.5, adjust = 3) + 
   
-  geom_vline(data = summary_stats_3, aes(xintercept = median_pred, color = emulator),
+  geom_vline(data = summary_stats_3, aes(xintercept = median_pred, colour = reb_level),
              linetype = "dashed", size = 0.6, show.legend = FALSE) +
   
-  facet_grid(CN_phase ~ lead_total + cr_total, labeller = label_value, scales = "fixed") +
-  labs(x = expression("Power Sector Emissions Levels (GtCO"[2]*"/year)"), 
+  labs(x = expression("Emissions Levels (GtCO"[2]*" cumulative)"), 
        y = "Density", fill = "Year") + 
   scale_fill_viridis_d(option = "C") +
-  scale_x_continuous(limits = c(0, 28)) +
-  scale_color_manual(values = c("MEWE_GBL_2030" = "purple", "MEWE_GBL_2050" = "black")) +
+  facet_wrap(~turn_level) +
   theme(
     legend.position = "bottom",
     axis.title.x  = element_text(size = 14, face = "bold"),
@@ -293,48 +151,83 @@ p <- df_gbl %>%
   )
 
 # Save to figures folder - FIG 4
-ggsave(paste0(data_path, "figures/emiss_gbl_fig4.png"), p, 
+ggsave(paste0(data_path, "figures/emiss_gbl.png"), p, 
        width = 10, height = 8, dpi = 100)
 
 
-# delete df for RAM
-df_gbl <- NULL
-
-
-# India plots -------------------------------------------------------------
-
-# Add vars for plotting
-df_in <- add_policy_factors(df_in)
-
-
-# Capacity INDIA ----------------------------------------------------------
+# Emissions under power system scenarios ----------------------------------
 
 # compute statistics for plot
-summary_stats <- df_in %>% 
-  filter(emulator %in% c("MEWK_solar_IN_2030", "MEWK_onshore_IN_2030") & 
-           IN_cp == "CP - None") %>%
-  group_by(year, id, sample_id) %>% 
-  mutate(total_value = sum(prediction, na.rm = TRUE)) %>% 
-  ungroup() %>%
-  group_by(IN_subsidy, IN_phase, emulator) %>%
-  summarise(median_pred = median(prediction, na.rm = TRUE),
-            p25_pred = quantile(prediction, 0.05, na.rm = TRUE),
-            p75_pred = quantile(prediction, 0.95, na.rm = TRUE),
-            .groups = 'drop') %>%
-  bind_rows(
-    df_in %>%
-      filter(emulator %in% c("MEWK_solar_IN_2030", "MEWK_onshore_IN_2030")) %>% #& 
-              # IN_cp == "CP - None") %>%
-      group_by(year, id, sample_id) %>% 
-      mutate(total_value = sum(prediction, na.rm = TRUE)) %>% 
-      ungroup() %>%
-      group_by(IN_subsidy, IN_phase) %>%
-      summarise(median_total = median(total_value, na.rm = TRUE),
-                p25_total = quantile(total_value, 0.05, na.rm = TRUE),
-                p75_total = quantile(total_value, 0.95, na.rm = TRUE),
-                .groups = 'drop') %>%
-      mutate(emulator = "Total")
+summary_stats <- df_gbl %>%
+  group_by(reb_switch, leads, cr_total) %>%
+  summarise(median_pred = mean(prediction, na.rm = TRUE)) %>%
+  drop_na()
+
+# plot
+p <- df_gbl[complete.cases(df_gbl[, c("leads", "cr_total")]),] %>%
+  ggplot(aes(x = prediction, fill = reb_active)) +
+  geom_density(alpha = 0.5, adjust = 3) + 
+  
+  geom_vline(data = summary_stats, aes(xintercept = median_pred),
+             linetype = "dashed", size = 0.6, show.legend = FALSE) +
+  
+  labs(x = expression("Emissions Levels (GtCO"[2]*" cumulative)"), 
+       y = "Density") + 
+  #scale_fill_viridis_d(option = "C") +
+  facet_grid(leads ~ cr_total) +
+  theme(
+    legend.position = "bottom",
+    axis.title.x  = element_text(size = 14, face = "bold"),
+    axis.title.y  = element_text(size = 14, face = "bold"),
+    axis.text.x   = element_text(size = 12, face = "bold", angle = 45, hjust = 1),
+    axis.text.y   = element_text(size = 12),
+    strip.text    = element_text(size = 13),
+    legend.title  = element_text(size = 14, face = "bold"),
+    legend.text   = element_text(size = 12),
+    plot.title    = element_text(size = 18, face = "bold", hjust = 0.5),
+    panel.spacing.x = unit(0.5, "lines")
   )
+p
+
+# emissions under set power scens with turnover -----------------------------------------
+
+# compute statistics for plot
+summary_stats <- df_gbl %>%
+  group_by(reb_level, turn_level, power_transition) %>%
+  summarise(median_pred = mean(prediction, na.rm = TRUE)) %>%
+  drop_na()
+
+# plot
+p <- df_gbl[complete.cases(df_gbl[, c("power_transition", "turn_level", "reb_level")]),] %>%
+  ggplot(aes(x = prediction, fill = reb_active)) +
+  geom_density(alpha = 0.5, adjust = 2.5) + 
+  
+  geom_vline(data = summary_stats, aes(xintercept = median_pred),
+             linetype = "dashed", size = 0.6, show.legend = FALSE) +
+  
+  labs(x = expression("Emissions Levels (GtCO"[2]*" cumulative)"), 
+       y = "Density") + 
+  #scale_fill_viridis_d(option = "C") +
+  facet_grid(turn_level + reb_level ~ power_transition, scales = 'free') +
+  scale_x_continuous(limits = c(800, 880)) + 
+  
+  theme(
+    legend.position = "bottom",
+    axis.title.x  = element_text(size = 14, face = "bold"),
+    axis.title.y  = element_text(size = 14, face = "bold"),
+    axis.text.x   = element_text(size = 12, face = "bold", angle = 45, hjust = 1),
+    axis.text.y   = element_text(size = 12),
+    strip.text    = element_text(size = 13),
+    legend.title  = element_text(size = 14, face = "bold"),
+    legend.text   = element_text(size = 12),
+    plot.title    = element_text(size = 18, face = "bold", hjust = 0.5),
+    panel.spacing.x = unit(0.5, "lines")
+  )
+p
+
+
+# old ---------------------------------------------------------------------
+
 
 # Compute total_value per sample
 total_df <- df_in %>%

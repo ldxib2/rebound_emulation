@@ -67,7 +67,7 @@ inputs <- input_df_rescaled[,2:length(names(input_df_rescaled))]
 # Indentify inputs to constrain e.g. cannibalisation rates
 inputs_red <- c()
 # set the bounds somewhere between 0-1
-inputs_red_bounds <- list(min = 0.45, max = 0.55)
+inputs_red_bounds <- list(min = 0.4, max = 0.6)
 
 
 # Set up functions --------------------------------------------------------
@@ -176,13 +176,14 @@ oaatSensvarSummaryPlot <- function(oat_sens_mat,
 # Reference grid, default at mean (0.5)
 # alter these fixed values to perform SA elsewhere in input space
 fixed_value <- 0.5
-ref <- setNames(rep(fixed_value, 9), colnames(inputs)) 
+ref <- setNames(rep(fixed_value, 10), colnames(inputs)) 
 
 # List all your .rds files
 rds_files_all <- list.files(emul_path, pattern = "\\.rds$", full.names = TRUE)
 
 
 # Global sensitivity analysis ---------------------------------------------
+# which emulators to include in SA
 global_param_files <- rds_files_all
 
 # Read them into a named list

@@ -46,14 +46,16 @@ config <- jsonlite::fromJSON(config_path)
 # main paths TODO: are any unnecessary
 data_path <- "Emulation/data/"
 input_path <- paste0(data_path, "lhc_scenarios.csv")
-output_path <- paste0(data_path, "emulator_inputs.csv")
+#output_path <- paste0(data_path, "emulator_inputs.csv")
+output_path <- paste0(data_path, "RGDP_raw.csv")
+
 
 input_path_rescaled <- paste0(substr(input_path, 1, nchar(input_path)-4), "_rescaled.csv")
 
 # Data paths
-emul_path <- "Emulation/data/emulators/"
-valid_plot_path <- "Emulation/data/validation/plots/"
-valid_model_path <- "Emulation/data/validation/models/"
+emul_path <- paste0(data_path, "emulators/")
+valid_plot_path <- paste0(data_path, "validation/plots/")
+valid_model_path <- paste0(data_path, "validation/models/")
 
 # create dirs if doesn't exist
 paths <- c(emul_path, valid_plot_path, valid_model_path)
@@ -66,28 +68,42 @@ invisible(lapply(paths, function(p) {
 
 # output vars of interest
 # if subsetting comment out and make new object preserving key
-output_vars <- c('RCO2', 
-                 'RGDP_2050', 
-                 'FR0_2050')
+output_vars <- c('RCO2') #, 
+                 # 'RGDP_2050', 
+                 # 'FR0_2050')
 
 # regions
 regions <- c('GBL') # CN, US, RGN, RGS
 years <- c(2050)
 
 
+names(full_output) <- c("scenario", "value")
+x <- full_output[[1]]
+
+full_output$scenario <- ifelse(
+  grepl("^RB_", x),
+  as.numeric(sub("^RB_", "", x)),
+  ifelse(
+    grepl("^No_RB_", x),
+    as.numeric(sub("^No_RB_", "", x)) + 100,
+    NA_real_   # or keep original / something else for rows not matching either pattern
+  )
+)
+full_output <- full_output[order(full_output$scenario), ]
+
 # Load input & output matrix -------------------------------------------------------
 
 ## load output
 full_output <- read.csv(output_path)
 colnames(full_output)[1] <- 'scenario'
-# convert to long format
+# convert to long format DON'T NEED THIS WITH LONG VERSION
 full_output <- full_output |>
   pivot_longer(
     cols = names(full_output[2:4]),
     names_to  = "variable",            
     values_to = "value"            
   ) %>% 
-  arrange(variable, Scenario) # reorder
+  arrange(variable, scenario) # reorder
 
 ## load input
 input_df <- read.csv(input_path)
@@ -98,6 +114,9 @@ input_df <- read.csv(input_path)
 
 # get input names and remove scenario numbers
 col_names <- names(input_df[2:length(names(input_df))])
+# categorical vars which don't need normalising
+vars_ignore <- c("scenario", "reb_switch")
+col_names <- col_names[!col_names %in% vars_ignore]
 
 # load input parameter ranges and format
 ranges <- lapply(config$ranges, function(x) list(min = x[1], max = x[2]))
@@ -199,6 +218,18 @@ for (var in output_vars) {
 }
 
 
+# Loop through vars
+for (var in output_vars) {
+  for (end_year in years){
+    for (region in regions){
+      key <- paste0(var,"_", region, "_", end_year)
+      
+      output_data <- full_output
+      
+      build_and_save_emulator(output_data, key)
+    }
+  }
+}
 
 
 
