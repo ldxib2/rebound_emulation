@@ -29,12 +29,13 @@ config <- jsonlite::fromJSON(config_path)
 
 # main paths TODO: are any unnecessary
 data_path <- "Emulation/data/"
+scen_path <- paste0(data_path, "scenarios/")
 input_path <- config$scen_levels_path
 input_path_rescaled <- paste0(substr(input_path, 1, nchar(input_path)-4), "_rescaled.csv")
 
 
 # Data paths
-emul_path <- "Emulation/data/emulators/"
+emul_path <- "Emulation/data/emulators/single/"
 
 ## Output paths
 output_dir <- paste0(data_path, "/predictions/")
@@ -42,21 +43,22 @@ output_dir <- paste0(data_path, "/predictions/")
 # Scenario file names
 output_scenarios_gbl <- "input_dfs_GBL_lhs.RData" 
 out_scen_pw_fixed <- "input_dfs_GBL_pw_fixed.RData"
-out_scen_pw_all_fixed <- "input_dfs_GBL_pw_all_fixed.RData"
+out_scen_rb_fixed <- "input_dfs_GBL_rb_fixed.RData"
 
 
 # Prediction file names
 out_gbl_preds <- "preds_GBL_lhs.csv"
 out_pw_fix_preds <- "preds_GBL_pw_fixed.csv"
-out_pw_all_fix_preds <- "preds_GBL_pw_all_fixed.csv"
+out_rb_fix_preds <- "preds_GBL_rb_fixed.csv"
 
 # Load input data and basic functions ---------------------------------------------------------
 input_df_rescaled <- read.csv(input_path_rescaled)
 
 params <- names(input_df_rescaled[2:10])
-#params <- c(tail(params, 1), head(params, -1)) # reb switch to front
-fixed_params <- params[c(5,6,7,8,9)] # EDIT
-lhc_params <- params[c(1,2,3,4)] # rest (no scen id)
+power_params <- params[c(5,6,7,8,9)]
+rebound_params <- params[c(1,2,3,4)]
+fixed_params <- rebound_params  # Switch as desired with below
+lhc_params <- power_params
 
 
 # Emulator Selections  ------------------------------------------------
@@ -66,55 +68,37 @@ emulator_uncertainty <- "NO" # "YES"
 
 ### Global
 # List of emulator selections to run
-gbl_emulator_selections <- list("em_RCO2_GBL_2050")
+emulators_all <- tools::file_path_sans_ext(list.files(paste0(data_path, "emulators/single/")))
+emulator_selections <- emulators_all
 
 
 # Scenario design - GLOBAL --------------------------------------------------
 
 # Define grid values for scenarios
-grid_vals <- m <- rbind(
-  # varied power scens 
-  # c(0),
-  # c(1)
-  # reb vs no_reb comparison
-  # c(0, 0, 0, 0, 0),
-  # c(0, 0, 0, 1, 1),
-  # c(1, 0, 0, 0, 0),
-  # c(1, 0, 0, 1, 1),
-  # c(1, 1, 1, 0, 0),
-  # c(1, 1, 1, 1, 1)
-  # set power scens
-  c(0.3, 0.3, 0.3, 0.5, 0.3),
-  c(0.7, 0.7, 0.7, 0.5, 0.7)
+grid_vals <- rbind(
+  # set power scens - limited range
+  # c(0.3, 0.3, 0.3, 0.5, 0.3),
+  # c(0.7, 0.7, 0.7, 0.5, 0.7)
   # set power scens FULL
   # c(0, 0, 0, 0.5, 0),
+  # c(0.5, 0.5, 0.5, 0.5, 0.5),
   # c(1, 1, 1, 0.5, 1)
-  # set power & turnover
-  # c(0, 0, 0, 0.3, 0.3, 0.3, 0.3),
-  # c(1, 0, 0, 0.3, 0.3, 0.3, 0.3),
-  # c(0, 0, 0, 0.7, 0.7, 0.7, 0.7),
-  # c(1, 0, 0, 0.7, 0.7, 0.7, 0.7),
-  # 
-  # c(0, 1, 1, 0.3, 0.3, 0.3, 0.3),
-  # c(1, 1, 1, 0.3, 0.3, 0.3, 0.3),
-  # c(0, 1, 1,0.7, 0.7, 0.7, 0.7),
-  # c(1, 1, 1, 0.7, 0.7, 0.7, 0.7)
+  # set rebound scens FULL
+  c(0, 0, 0, 0),
+  c(0.5, 0.5, 0.5, 0.5),
+  c(1, 1, 1, 1)
+  # set rebound scens - limited range
+  # c(0.3, 0.3, 0.3, 0.3),
+  # c(0.7, 0.7, 0.7, 0.7)
   
 )
 
-# # Create a matrix with 3 rows, each filled with 0, 0.5, and 1 respectively
-# values <- matrix(rep(grid_vals, each = length(params)), 
-#                  nrow = 3, byrow = TRUE)
 
 # Convert to dataframe and assign column names
 fixed_df  <- as.data.frame(grid_vals)
 names(fixed_df) <- fixed_params
 
-n_iterations <- 1000
-
-# Define which columns should use LHS, ALL BY DEFAULT
-lhs_cols <- lhc_params
-normal_use <- c()
+n_iterations <- 20000
 
 # Scenario creation - GLOBAL ------------------------------------------------
 
@@ -123,12 +107,11 @@ input_dfs <- list()
 
 for (i in 1:nrow(fixed_df)) {
   
-  fixed_params <- fixed_df[i, ]
-  varied_columns <- setdiff(params, names(fixed_df))
-  
-  ## Split columns
-  lhs_use <- intersect(lhs_cols, varied_columns)
-  #normal_use <- setdiff(varied_columns, lhs_cols)
+  ## variables that are fixed
+  fixed_vars <- fixed_df[i, ]
+
+  ## variables that vary
+  lhs_use <- lhc_params
   
   ## Prepare empty list
   lhs_sample <- NULL
@@ -145,44 +128,21 @@ for (i in 1:nrow(fixed_df)) {
     colnames(lhs_sample) <- lhs_use
   }
   
-  # Normal distribution for the rest
-  if (length(normal_use) > 0) {
-    var_min_norm <- rep(0, length(normal_use))
-    var_max_norm <- rep(1, length(normal_use))
-    mean_values <- (var_min_norm + var_max_norm) / 2
-    sd_values <- (var_max_norm - var_min_norm) / 4
-    
-    normal_sample <- as.data.frame(
-      sapply(seq_along(normal_use), function(j) {
-        sampled_values <- rnorm(n_iterations, mean = mean_values[j], sd = sd_values[j])
-        pmin(pmax(sampled_values, 0), 1)
-      })
-    )
-    colnames(normal_sample) <- normal_use
-  }
-  
-  # Combine LHS + normal samples into one data frame (original column order) if varying
-  if (length(normal_use) > 0) {
-    varied_sample <- cbind(lhs_sample, normal_sample)[, varied_columns]
-  }
-  else {
-    varied_sample <- lhs_sample
-  }
-  
+
   # Combine with fixed parameters
   input_df_sample <- cbind(
-    as.data.frame(matrix(rep(unlist(fixed_params), n_iterations), nrow = n_iterations, byrow = TRUE)),
-    varied_sample
+    as.data.frame(matrix(rep(unlist(fixed_vars), n_iterations), nrow = n_iterations, byrow = TRUE)),
+    lhs_sample
   )
   
-  colnames(input_df_sample)[1:length(fixed_params)] <- names(fixed_df)
+  colnames(input_df_sample)[1:length(fixed_vars)] <- names(fixed_df)
   
   input_dfs[[paste0("id_", i)]] <- input_df_sample
 }
 
 
 # Save input scenarios
-saveRDS(input_dfs, paste0(output_dir, out_scen_pw_fixed))
+saveRDS(input_dfs, paste0(output_dir, out_scen_rb_fixed))
 
 ## Input Sample distribution plot
 # Pick one of the generated data frames
@@ -190,14 +150,15 @@ df_check <- input_dfs[["id_1"]]
 
 # Melt into long format for faceting
 df_long <- df_check %>%
-  pivot_longer(cols = all_of(varied_columns), names_to = "variable", values_to = "value")
+  pivot_longer(cols = all_of(params), names_to = "variable", values_to = "value")
 
 # Plot histograms for each variable
 p <- ggplot(df_long, aes(x = value)) +
   geom_histogram(binwidth = 0.02, boundary = 0, fill = "skyblue", color = "black") +
   facet_wrap(~variable, scales = "free") +
   theme_minimal() +
-  labs(title = "Distribution of Sampled Variables (India)", x = "Value", y = "Count")
+  labs(title = "Distribution of Sampled Variables", x = "Value", y = "Count")
+p
 # Save to figures folder
 ggsave(paste0(data_path, "/figures/scen_input_dist_GBL.png"), p, 
        width = 8, height = 6, dpi = 100)
@@ -221,14 +182,12 @@ all_inputs_mat <- data.frame(all_inputs_df)
 all_results <- list()
 
 # Loop over each emulator
-for (selection in gbl_emulator_selections) {
+for (selection in emulator_selections) {
   
   # Load emulator
   emulator_path <- paste0(emul_path, selection, ".rds")
   emulator <- readRDS(emulator_path)
   
-  # Extract year from emulator name
-  year <- substr(selection, nchar(selection) - 3, nchar(selection))  # last 4 characters
   
   # Loop over each input set
   for (id_name in names(input_dfs)) {
@@ -254,7 +213,6 @@ for (selection in gbl_emulator_selections) {
     # Add metadata
     result_df$emulator   <- selection
     result_df$id         <- id_name
-    result_df$year       <- year
     result_df$sample_id  <- seq_len(nrow(input_df))
     
     # Store result
@@ -270,7 +228,7 @@ rownames(final_results_df) <- NULL
 
 # Save
 write.csv(final_results_df, 
-          file = paste0(output_dir, out_pw_all_fix_preds),
+          file = paste0(output_dir, out_rb_fix_preds),
           row.names = F)
 
 

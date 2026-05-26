@@ -1,6 +1,6 @@
 {
     "n_scens": 100,
-    "scen_levels_path": "Emulation/data/lhc_scenarios.csv",
+    "scen_levels_path": "Emulation/data/scenarios/lhc_scenarios.csv",
     "ranges": {
         "heat_rebound": [1.15, 1.6],
         "trans_rebound": [0.5, 1.5],

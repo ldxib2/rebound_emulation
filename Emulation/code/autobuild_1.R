@@ -49,6 +49,7 @@ sim_data <- paste0(data_path, "simulation_data/")
 input_path <- paste0(data_path, "lhc_scenarios.csv")
 #output_path <- paste0(data_path, "emulator_inputs.csv")
 output_path <- paste0(sim_data, "raw_data_wide.csv")
+format_path <- paste0(sim_data, "raw_data_long.csv")
 
 
 input_path_rescaled <- paste0(substr(input_path, 1, nchar(input_path)-4), "_rescaled.csv")
@@ -86,6 +87,8 @@ full_output <- full_output |>
     values_to = "value"            
   ) %>% 
   arrange(variable, scenario) # reorder
+
+write.csv(full_output, format_path, row.names = F)
 
 # output vars of interest
 output_vars <- unique(full_output$variable) 

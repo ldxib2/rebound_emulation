@@ -38,3 +38,5 @@ full_output <- full_output[order(full_output$scenario), c("scenario", "variable"
 # save formated data
 write.csv(full_output, formatted_path, row.names = FALSE)
 
+
+
