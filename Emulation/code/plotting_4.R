@@ -27,11 +27,15 @@ data_path <- "Emulation/data/"
 output_dir <- paste0(data_path, "/predictions/")
 
 # Prediction file names EDIT FOR PLOT DATA
-gbl_preds <- "preds_GBL_lhs.csv"
+pw_preds <- "preds_GBL_pw_fixed.csv"
+rb_preds <- "preds_GBL_rb_fixed.csv"
+combined_preds <- "preds_combined_fact.csv"
+
+out_gbl_preds <- paste0(output_dir, combined_preds)
 
 # Load emulator prediction data
-df_gbl <- vroom(paste0(data_path, out_gbl_preds))
-df_gbl <- final_results_df
+df_combined <- vroom(paste0(out_gbl_preds))
+#df_gbl <- final_results_df
 
 
 # Policy factors function -------------------------------------------------
@@ -41,71 +45,88 @@ add_policy_factors <- function(df){
   df %>% 
   # Create US policy factor variable
   mutate(
-    reb_level_tri = factor(
-      case_when(
-        reb_switch == 0 ~ "no rebound",
-        reb_switch == 1 & 
-          heat_rebound == 0 & 
-          trans_rebound == 0 ~ "low rebound",
-        reb_switch == 1 & 
-          heat_rebound == 1 & 
-          trans_rebound == 1 ~ "high rebound",
-      ),
-      levels = c("no rebound", "low rebound", "high rebound")
-      ),
-    reb_active = factor(
-      case_when(
-        reb_switch == 0 ~ "no rebound",
-        reb_switch == 1 ~ "rebound"
-      ),
-      levels = c("no rebound", "rebound")
-    ),
-        turn_level_bi = factor(
-          case_when(
-            trans_turnover == 0 &
-              heat_turnover == 0 ~ "low turnover",
-            trans_turnover == 1 &
-              heat_turnover == 1 ~ "high turnover"
-          ),
-          levels = c("low turnover", "high turnover")
-    ),
-   leads = factor(
+   pw_transition_tri = factor(
      case_when(
-       lead_solar < 0.5 & lead_onshore < 0.5 ~ "Short tech lead",
-       lead_solar >= 0.5 & lead_onshore >= 0.5 ~ "Long tech lead"
+       lead_solar == 0 & lead_onshore == 0 &
+         cr_solar == 0 & cr_wind == 0 ~ "Fast transition",
+       lead_solar == 0.5 & lead_onshore == 0.5 &
+         cr_solar == 0.5 & cr_wind == 0.5 ~ "Mid-speed transition",
+       lead_solar == 1 & lead_onshore == 1 &
+         cr_solar == 1 & cr_wind == 1 ~ "Slow transition",
      ),
-     levels = c("Short tech lead", "Long tech lead")
+     levels = c("Fast transition","Mid-speed transition", "Slow transition")
    ),
-   cr_total = factor(
+   pw_transition = factor(
      case_when(
-       cr_wind < 0.5 & cr_solar < 0.5 ~ "Low Cannibalisation",
-       cr_solar >= 0.5 & cr_wind >= 0.5 ~ "High Cannibalisation"
+       lead_solar <= 0.33 & lead_onshore <= 0.33 &
+         cr_solar <= 0.33 & cr_wind <= 0.33 ~ "Fast transition",
+         lead_solar > 0.33 & lead_solar <= 0.66 & lead_onshore > 0.33 &
+           lead_onshore <= 0.66 & cr_solar > 0.33 & cr_solar <= 0.66 & 
+           cr_wind > 0.33 & cr_wind <= 0.66 ~ "Mid-speed transition",
+       lead_solar > 0.66 & lead_onshore > 0.66 &
+         cr_solar > 0.66 & cr_wind > 0.66 ~ "Slow transition",
      ),
-     levels = c("Low Cannibalisation", "High Cannibalisation")
+     levels = c("Fast transition", "Mid-speed transition", "Slow transition")  
+     ),
+     reb_turn_tri = factor(
+       case_when(
+         heat_rebound == 0 & trans_rebound == 0 &
+           heat_turnover == 0 & trans_turnover == 0 ~ "Low rebound & turnover",
+         heat_rebound == 1 & trans_rebound == 1 &
+           heat_turnover == 1 & trans_turnover == 1 ~ "High rebound & turnover",
+         heat_rebound == 0.5 & trans_rebound == 0.5 &
+           heat_turnover == 0.5 & trans_turnover == 0.5 ~ "Mid rebound & turnover",
+         heat_rebound == 0 & trans_rebound == 0 &
+           heat_turnover == 1 & trans_turnover == 1 ~ "Low rebound, high turnover",
+         heat_rebound == 1 & trans_rebound == 1 &
+           heat_turnover == 0 & trans_turnover == 0 ~ "High rebound, low turnover",
+         
+       ),
+       levels = c("High rebound & turnover", "Low rebound & turnover", 
+                  "Mid rebound & turnover",
+       "Low rebound, high turnover", "High rebound, low turnover")
+     ),
+     rebound = factor(
+       case_when(
+         heat_rebound <= 0.33 & trans_rebound <= 0.33 ~ "Low rebound",
+         heat_rebound > 0.33 & heat_rebound <= 0.66 & trans_rebound > 0.33 &
+           trans_rebound <= 0.66  ~ "Mid rebound",
+         heat_rebound > 0.66 & trans_rebound > 0.66 ~ "High rebound",
+         .default = "Mixed rebound"
+         ),
+         levels = c("Low rebound", "Mid rebound", "High rebound", "Mixed rebound")  
+       ),
+   turnover = factor(
+     case_when(
+       heat_turnover <= 0.33 & trans_turnover <= 0.33 ~ "Low turnover",
+       heat_turnover > 0.33 & heat_turnover <= 0.66 & trans_turnover > 0.33 &
+         trans_turnover <= 0.66  ~ "Mid turnover",
+       heat_turnover > 0.66 & trans_turnover > 0.66 ~ "High turnover",
+       .default = "Mixed turnover"
+     ),
+     levels = c("Low turnover", "Mid turnover", "High turnover", "Mixed turnover")  
    ),
-   turn_level = factor(
-     case_when(
-       trans_turnover < 0.5 & heat_turnover < 0.5 ~ "low turnover",
-       trans_turnover >= 0.5 & heat_turnover >= 0.5 ~ "high turnover"
-     ),
-     levels = c("low turnover", "high turnover")
-   ),
-   reb_level = factor(
-     case_when(
-       trans_rebound < 0.5 & heat_rebound < 0.5 ~ "low rebound",
-       trans_rebound >= 0.5 & heat_rebound >= 0.5 ~ "high rebound"
-     ),
-     levels = c("low rebound", "high rebound")
-   ),
-   power_transition = factor(
-     case_when(
-       cr_total == "High Cannibalisation" &
-         leads == "Long tech lead" ~ "slow transition",
-       cr_total == "Low Cannibalisation" &
-         leads == "Short tech lead" ~ "fast transition"
-     ),
-     levels = c("slow transition", "fast transition")
-   ),    
+   combined = factor(
+       paste(rebound, turnover, sep = " - "),
+     levels = c(
+       "Low rebound - Low turnover",
+       "Low rebound - Mid turnover",
+       "Low rebound - High turnover",
+       "Mid rebound - Low turnover",
+       "Mid rebound - Mid turnover",
+       "Mid rebound - High turnover",
+       "High rebound - Low turnover",
+       "High rebound - Mid turnover",
+       "High rebound - High turnover",
+       "Mixed rebound - Mixed turnover",
+       "Mixed rebound - High turnover",
+       "Mixed rebound - Mid turnover",
+       "Mixed rebound - Low turnover",
+       "High rebound - Mixed turnover",
+       "Mid rebound - Mixed turnover",
+       "Low rebound - Mixed turnover"
+     )
+   )
   )
 }
 
@@ -114,11 +135,19 @@ add_policy_factors <- function(df){
 # Global plots ------------------------------------------------------------
 
 # Add in policy factors
-df_gbl <- add_policy_factors(df_gbl)
+#df_gbl <- add_policy_factors(df_gbl)
+df_combined <- add_policy_factors(df_combined)
+
+# inspect
+colSums(is.na(df_combined))
+
+# If joing pw fixed and rb fixed scenarios
+#df_combined <- bind_rows(df_gbl, df_rb)
+df_combined$...1 <- NULL
+write.csv(df_combined, paste0(output_dir, "preds_combined_fac.csv"), row.names = F)
 
 
 # Emissions GLOBAL HI/LOW REBOUND vs NO REBOUND  --------------------------------------------------------
-
 
 # Statistics for plot
 summary_stats_3 <- df_gbl %>%

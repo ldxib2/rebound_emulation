@@ -1,234 +1,320 @@
 """
-FTT Emulator Plots — Python/Matplotlib equivalents of the R/ggplot2 script.
-
-Usage:
-    python plots.py
-
-Expects:
-    data/predictions/bases_preds_lhc.csv   (columns include: sample_id, Year, Value,
-        emulator, trans_turnover, heat_turnover, lead_solar, lead_onshore,
-        cr_wind, cr_solar, trans_rebound, heat_rebound, prediction)
+Equivalent of plot_2.R — global and India emissions/capacity plots.
+Dependencies: pandas, matplotlib, seaborn, scipy, numpy
 """
 
+import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
+import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
-from pathlib import Path
-import sys
-import os
+import seaborn as sns
+from scipy.stats import gaussian_kde
 
-# Set root directory
-root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(root_dir)
-os.chdir(root_dir)
+#%% ── Paths ─────────────────────────────────────────────────────────────────────
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+wd = os.path.dirname(os.path.dirname(script_dir))
+os.chdir(wd)
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
-DATA_PATH   = Path("data/predictions")
-FIGURES_DIR = Path("data/figures")
-FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+config_path = "Emulation/code/config/config.json"
+with open(config_path) as f:
+    config = json.load(f)
 
-PREDS_FILE  = DATA_PATH / "bases_preds_lhc.csv"
+data_path = "Emulation/data/"
+output_dir = os.path.join(data_path, "predictions")
+figures_dir = os.path.join(data_path, "figures")
+os.makedirs(figures_dir, exist_ok=True)
 
-# ── Colour palette (matching R script intent) ──────────────────────────────────
-COLOURS = {
-    "energy_demand_no": "#d73027",   # no rebound  → warm red
-    "energy_demand_rb": "#4575b4",   # rebound     → blue
-    "no rebound":       "#d73027",
-    "rebound":          "#4575b4",
-}
+gbl_preds = "preds_combined_fac.csv"
+df_gbl = pd.read_csv(os.path.join(output_dir, gbl_preds))
 
-# ── Shared theme helper ────────────────────────────────────────────────────────
-def apply_theme(ax, xlabel="", ylabel="", fontsize=9):
-    """Apply the clean, minimal style used throughout the reference script."""
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.tick_params(labelsize=fontsize - 1)
-    ax.yaxis.grid(True, linestyle="--", linewidth=0.4, alpha=0.4)
-    ax.set_axisbelow(True)
-    if xlabel:
-        ax.set_xlabel(xlabel, fontsize=fontsize, fontweight="bold")
-    if ylabel:
-        ax.set_ylabel(ylabel, fontsize=fontsize, fontweight="bold")
+# list cols where rebound vars are obsolete due to no rebound switch
+cols = ['trans_rebound', 'heat_rebound']
+df_gbl.loc[df_gbl['emulator'].str.contains('No_RB', na=False), cols] = np.nan
+
+df_gbl[df_gbl['emulator'].str.contains('No_RB', na=False)].head()
 
 
-# ── Policy-factor labelling ────────────────────────────────────────────────────
-def add_policy_factors(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["Value"] = df["Value"] / 1000  # TJ → PJ (same as /1000 in R)
+# Remove mixed scenarios (where one turnover is high and the other low) to reduce size
+df = df_gbl[df_gbl['combined'].str.contains('Mixed', na=False) == False]
 
-    # Binary turnover
-    conditions = [
-        (df["trans_turnover"] == 0) & (df["heat_turnover"] == 0),
-        (df["trans_turnover"] == 1) & (df["heat_turnover"] == 1),
-    ]
-    df["turn_level_bi"] = np.select(conditions,
-                                     ["low turnover", "high turnover"],
-                                     default=None)
 
-    # Continuous-threshold turnover
-    df["turn_level"] = np.where(
-        (df["trans_turnover"] < 0.5) & (df["heat_turnover"] < 0.5),
-        "low turnover",
-        np.where(
-            (df["trans_turnover"] >= 0.5) & (df["heat_turnover"] >= 0.5),
-            "high turnover", None
+
+#%% ── Policy factor helper ───────────────────────────────────────────────────────
+
+# def add_policy_factors(df: pd.DataFrame) -> pd.DataFrame:
+#     df = df.copy()
+
+#     # reb_level_tri
+#     conditions = [
+#         df["reb_switch"] == 0,
+#         (df["reb_switch"] == 1) & (df["heat_rebound"] == 0) & (df["trans_rebound"] == 0),
+#         (df["reb_switch"] == 1) & (df["heat_rebound"] == 1) & (df["trans_rebound"] == 1),
+#     ]
+#     choices = ["no rebound", "low rebound", "high rebound"]
+#     df["reb_level_tri"] = pd.Categorical(
+#         np.select(conditions, choices, default=np.nan),
+#         categories=["no rebound", "low rebound", "high rebound"],
+#         ordered=True,
+#     )
+
+#     # reb_active
+#     df["reb_active"] = pd.Categorical(
+#         np.where(df["reb_switch"] == 0, "no rebound", "rebound"),
+#         categories=["no rebound", "rebound"],
+#         ordered=True,
+#     )
+
+#     # turn_level_bi
+#     cond_turn_bi = [
+#         (df["trans_turnover"] == 0) & (df["heat_turnover"] == 0),
+#         (df["trans_turnover"] == 1) & (df["heat_turnover"] == 1),
+#     ]
+#     df["turn_level_bi"] = pd.Categorical(
+#         np.select(cond_turn_bi, ["low turnover", "high turnover"], default=np.nan),
+#         categories=["low turnover", "high turnover"],
+#         ordered=True,
+#     )
+
+#     # leads
+#     cond_leads = [
+#         (df["lead_solar"] < 0.5) & (df["lead_onshore"] < 0.5),
+#         (df["lead_solar"] >= 0.5) & (df["lead_onshore"] >= 0.5),
+#     ]
+#     df["leads"] = pd.Categorical(
+#         np.select(cond_leads, ["Short tech lead", "Long tech lead"], default=np.nan),
+#         categories=["Short tech lead", "Long tech lead"],
+#         ordered=True,
+#     )
+
+#     # cr_total
+#     cond_cr = [
+#         (df["cr_wind"] < 0.5) & (df["cr_solar"] < 0.5),
+#         (df["cr_solar"] >= 0.5) & (df["cr_wind"] >= 0.5),
+#     ]
+#     df["cr_total"] = pd.Categorical(
+#         np.select(cond_cr, ["Low Cannibalisation", "High Cannibalisation"], default=np.nan),
+#         categories=["Low Cannibalisation", "High Cannibalisation"],
+#         ordered=True,
+#     )
+
+#     # turn_level
+#     cond_turn = [
+#         (df["trans_turnover"] < 0.5) & (df["heat_turnover"] < 0.5),
+#         (df["trans_turnover"] >= 0.5) & (df["heat_turnover"] >= 0.5),
+#     ]
+#     df["turn_level"] = pd.Categorical(
+#         np.select(cond_turn, ["low turnover", "high turnover"], default=np.nan),
+#         categories=["low turnover", "high turnover"],
+#         ordered=True,
+#     )
+
+#     # reb_level
+#     cond_reb = [
+#         (df["trans_rebound"] < 0.5) & (df["heat_rebound"] < 0.5),
+#         (df["trans_rebound"] >= 0.5) & (df["heat_rebound"] >= 0.5),
+#     ]
+#     df["reb_level"] = pd.Categorical(
+#         np.select(cond_reb, ["low rebound", "high rebound"], default=np.nan),
+#         categories=["low rebound", "high rebound"],
+#         ordered=True,
+#     )
+
+#     # power_transition (depends on cr_total and leads already set)
+#     cond_pt = [
+#         (df["cr_total"] == "High Cannibalisation") & (df["leads"] == "Long tech lead"),
+#         (df["cr_total"] == "Low Cannibalisation") & (df["leads"] == "Short tech lead"),
+#     ]
+#     df["power_transition"] = pd.Categorical(
+#         np.select(cond_pt, ["slow transition", "fast transition"], default=np.nan),
+#         categories=["slow transition", "fast transition"],
+#         ordered=True,
+#     )
+
+#     return df
+
+# # Apply
+# df_gbl = add_policy_factors(df_gbl)
+
+#%% ── Apply theme ─────────────────────────────────────────────────────────────
+
+THEME = dict(
+    title_fontsize=18,
+    axis_title_fontsize=14,
+    axis_tick_fontsize=12,
+    strip_fontsize=13,
+    legend_fontsize=12,
+)
+
+
+def apply_common_theme(ax):
+    ax.set_xlabel(ax.get_xlabel(), fontsize=THEME["axis_title_fontsize"], fontweight="bold")
+    ax.set_ylabel(ax.get_ylabel(), fontsize=THEME["axis_title_fontsize"], fontweight="bold")
+    for label in ax.get_xticklabels():
+        label.set_fontsize(THEME["axis_tick_fontsize"])
+        label.set_fontweight("bold")
+        label.set_rotation(45)
+        label.set_ha("right")
+    for label in ax.get_yticklabels():
+        label.set_fontsize(THEME["axis_tick_fontsize"])
+
+
+#%% ── Fig 1: Emissions — high/low rebound vs no rebound ─────────────────────────
+
+palette_viridis = sns.color_palette("magma", n_colors=2)
+
+summary_stats = (
+    df.groupby(["rebound", "turnover"], observed=True)["prediction"]
+    .mean()
+    .reset_index()
+    .rename(columns={"prediction": "mean_pred"})
+)
+#%%
+
+
+#%%
+turn_levels = df["turnover"].unique().tolist()
+fig, axes = plt.subplots(1, len(turn_levels), figsize=(10, 8), sharey=False)
+if len(turn_levels) == 1:
+    axes = [axes]
+
+for ax, tl in zip(axes, turn_levels):
+    subset = df[df["turnover"] == tl]
+    for i, rl in enumerate(df["rebound"].unique().tolist()):
+        grp = subset[subset["rebound"] == rl]["prediction"].dropna()
+        if grp.empty:
+            continue
+        grp.plot.kde(ax=ax, label=rl, color=palette_viridis[i], alpha=0.5)
+        ax.fill_between(
+            np.linspace(grp.min(), grp.max(), 200),
+            gaussian_kde(grp)(np.linspace(grp.min(), grp.max(), 200)),
+            alpha=0.3,
+            color=palette_viridis[i],
         )
-    )
+        vline_val = summary_stats.loc[
+            (summary_stats["rebound"] == rl) & (summary_stats["turnover"] == tl),
+            "mean_pred",
+        ]
+        if not vline_val.empty:
+            ax.axvline(vline_val.values[0], color=palette_viridis[i], linestyle="--", linewidth=0.8)
 
-    # Rebound level
-    df["reb_level"] = np.where(
-        (df["trans_rebound"] < 0.5) & (df["heat_rebound"] < 0.5),
-        "low rebound",
-        np.where(
-            (df["trans_rebound"] >= 0.5) & (df["heat_rebound"] >= 0.5),
-            "high rebound", None
-        )
-    )
+    ax.set_title(tl, fontsize=THEME["strip_fontsize"])
+    ax.set_xlabel(r"Emissions Levels (GtCO$_2$ cumulative)", fontsize=THEME["axis_title_fontsize"], fontweight="bold")
+    ax.set_ylabel("Density", fontsize=THEME["axis_title_fontsize"], fontweight="bold")
+    apply_common_theme(ax)
 
-    # # Rebound active flag
-    # df["reb_active"] = np.where(df["reb_switch"] == 0, "no rebound", "rebound")
+handles = [
+    mpatches.Patch(color=palette_viridis[i], label=lbl, alpha=0.5)
+    for i, lbl in enumerate(df["rebound"].cat.categories)
+]
+fig.legend(handles=handles, loc="lower center", ncol=2, fontsize=THEME["legend_fontsize"],
+           title="Rebound level", title_fontsize=THEME["legend_fontsize"], bbox_to_anchor=(0.5, 0))
+fig.tight_layout(rect=[0, 0.06, 1, 1])
+fig.savefig(os.path.join(figures_dir, "emiss_gbl.png"), dpi=100)
+plt.close(fig)
+print("Saved emiss_gbl.png")
 
-    # Tech leads
-    df["leads"] = np.where(
-        (df["lead_solar"] < 0.5) & (df["lead_onshore"] < 0.5),
-        "Short tech lead",
-        np.where(
-            (df["lead_solar"] >= 0.5) & (df["lead_onshore"] >= 0.5),
-            "Long tech lead", None
-        )
-    )
+#%%
+# ── Fig 2: Emissions under power system scenarios ─────────────────────────────
 
-    # Cannibalisation rate
-    df["cr_total"] = np.where(
-        (df["cr_wind"] < 0.5) & (df["cr_solar"] < 0.5),
-        "Low Cannibalisation",
-        np.where(
-            (df["cr_solar"] >= 0.5) & (df["cr_wind"] >= 0.5),
-            "High Cannibalisation", None
-        )
-    )
+summary_stats = (
+    df_gbl.groupby(["reb_switch", "leads", "cr_total"], observed=True)["prediction"]
+    .mean()
+    .reset_index()
+    .rename(columns={"prediction": "median_pred"})
+    .dropna()
+)
 
-    # Power transition composite
-    df["power_transition"] = np.where(
-        (df["cr_total"] == "High Cannibalisation") & (df["leads"] == "Long tech lead"),
-        "slow transition",
-        np.where(
-            (df["cr_total"] == "Low Cannibalisation") & (df["leads"] == "Short tech lead"),
-            "fast transition", None
-        )
-    )
+plot_df2 = df_gbl.dropna(subset=["leads", "cr_total"])
+leads_levels = plot_df2["leads"].cat.categories.tolist()
+cr_levels = plot_df2["cr_total"].cat.categories.tolist()
 
-    return df
+fig, axes = plt.subplots(len(leads_levels), len(cr_levels), figsize=(10, 8), squeeze=False)
 
+for r, lead in enumerate(leads_levels):
+    for c, cr in enumerate(cr_levels):
+        ax = axes[r][c]
+        subset = plot_df2[(plot_df2["leads"] == lead) & (plot_df2["cr_total"] == cr)]
+        for i, ra in enumerate(df["rebound"].cat.categories):
+            grp = subset[subset["rebound"] == ra]["prediction"].dropna()
+            if not grp.empty:
+                grp.plot.kde(ax=ax, label=ra, alpha=0.5)
+                vline_row = summary_stats[
+                    (summary_stats["leads"] == lead) & (summary_stats["cr_total"] == cr)
+                ]
+                for _, row in vline_row.iterrows():
+                    ax.axvline(row["mean_pred"], linestyle="--", linewidth=0.6, color="grey")
 
+        if r == 0:
+            ax.set_title(cr, fontsize=THEME["strip_fontsize"])
+        if c == 0:
+            ax.set_ylabel(lead, fontsize=THEME["strip_fontsize"])
+        ax.set_xlabel(r"Emissions Levels (GtCO$_2$ cumulative)", fontsize=10)
+        apply_common_theme(ax)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PLOT 2 — Emissions density: Power-system scenarios (leads × cr_total)
-# ══════════════════════════════════════════════════════════════════════════════
-def plot_emissions_power_scenarios(df_gbl: pd.DataFrame):
-    """
-    KDE density of cumulative emissions faceted by leads (rows) × cr_total (cols),
-    filled by reb_active. Dashed vlines mark group means.
-    """
-    from scipy.stats import gaussian_kde
+fig.tight_layout()
+fig.savefig(os.path.join(figures_dir, "emiss_power_scens.png"), dpi=100)
+plt.close(fig)
+print("Saved emiss_power_scens.png")
 
-    row_vals = ["Short tech lead", "Long tech lead"]
-    col_vals = ["Low Cannibalisation", "High Cannibalisation"]
+#%%
+# ── Fig 3: Emissions under set power scens with turnover ──────────────────────
 
-    sub = df_gbl.dropna(subset=["leads", "cr_total"]).copy()
+summary_stats_pt = (
+    df_gbl.groupby(["reb_level", "turn_level", "power_transition"], observed=True)["prediction"]
+    .mean()
+    .reset_index()
+    .rename(columns={"prediction": "median_pred"})
+    .dropna()
+)
 
-    summary = (sub
-               .groupby(["emulator", "leads", "cr_total"])["Value"]
-               .mean()
-               .reset_index()
-               .rename(columns={"Value": "mean_pred"}))
+plot_df3 = df_gbl.dropna(subset=["power_transition", "turn_level", "reb_level"])
+pt_levels = plot_df3["power_transition"].cat.categories.tolist()
+tl_levels = plot_df3["turn_level"].cat.categories.tolist()
+rl_levels = plot_df3["reb_level"].cat.categories.tolist()
 
-    fig, axes = plt.subplots(len(row_vals), len(col_vals),
-                             figsize=(9, 6), sharey=False, sharex=False)
-    fig.subplots_adjust(hspace=0.45, wspace=0.35)
+n_rows = len(tl_levels) * len(rl_levels)
+n_cols = len(pt_levels)
 
-    rebound_groups = {
-        "no rebound": (sub["emulator"] == 0,  COLOURS["no rebound"]),
-        "rebound":    (sub["emulator"] == 1,  COLOURS["rebound"]),
-    }
+fig, axes = plt.subplots(n_rows, n_cols, figsize=(10, 8), squeeze=False)
 
-    for ri, row_v in enumerate(row_vals):
-        for ci, col_v in enumerate(col_vals):
-            ax = axes[ri][ci]
-            cell = sub[(sub["leads"] == row_v) & (sub["cr_total"] == col_v)]
+row_combos = [(tl, rl) for tl in tl_levels for rl in rl_levels]
 
-            for label, (mask, colour) in rebound_groups.items():
-                data = cell.loc[mask, "Value"].dropna()
-                if len(data) < 10:
-                    continue
-                kde  = gaussian_kde(data, bw_method=0.3)
-                xs   = np.linspace(data.min(), data.max(), 300)
-                ax.fill_between(xs, kde(xs), alpha=0.45, color=colour, label=label)
-                ax.plot(xs, kde(xs), color=colour, lw=1)
+for r, (tl, rl) in enumerate(row_combos):
+    for c, pt in enumerate(pt_levels):
+        ax = axes[r][c]
+        subset = plot_df3[
+            (plot_df3["turn_level"] == tl)
+            & (plot_df3["reb_level"] == rl)
+            & (plot_df3["power_transition"] == pt)
+        ]
+        for grp_name, grp_df in subset.groupby("reb_active", observed=True):
+            vals = grp_df["prediction"].dropna()
+            if not vals.empty:
+                vals.plot.kde(ax=ax, label=grp_name, alpha=0.5)
 
-            # Vlines for means
-            vline_data = summary[
-                (summary["leads"] == row_v) & (summary["cr_total"] == col_v)
-            ]
-            for _, vrow in vline_data.iterrows():
-                reb_col = COLOURS["rebound"] if vrow["emulator"] == 1 else COLOURS["no rebound"]
-                ax.axvline(vrow["mean_pred"], color=reb_col,
-                           linestyle="--", linewidth=0.8)
+        ax.set_xlim(800, 880)
+        vline_row = summary_stats_pt[
+            (summary_stats_pt["turn_level"] == tl)
+            & (summary_stats_pt["reb_level"] == rl)
+            & (summary_stats_pt["power_transition"] == pt)
+        ]
+        for _, row in vline_row.iterrows():
+            ax.axvline(row["median_pred"], linestyle="--", linewidth=0.6, color="grey")
 
-            apply_theme(ax, fontsize=8)
-            ax.tick_params(axis="x", rotation=45)
-            ax.set_xlabel(r"Emissions (GtCO$_2$ cumulative)", fontsize=7)
-            ax.set_ylabel("Density", fontsize=7)
+        if r == 0:
+            ax.set_title(pt, fontsize=THEME["strip_fontsize"])
+        if c == 0:
+            ax.set_ylabel(f"{tl}\n{rl}", fontsize=9)
+        ax.set_xlabel(r"Emissions (GtCO$_2$ cum.)", fontsize=9)
+        apply_common_theme(ax)
 
-            # Facet labels
-            if ri == 0:
-                ax.set_title(col_v, fontsize=8, fontweight="bold", pad=4)
-            if ci == 0:
-                ax.set_ylabel(f"{row_v}\nDensity", fontsize=7)
+fig.tight_layout()
+fig.savefig(os.path.join(figures_dir, "emiss_power_turnover.png"), dpi=100)
+plt.close(fig)
+print("Saved emiss_power_turnover.png")
 
-    # Shared legend
-    legend_patches = [
-        Line2D([0], [0], color=COLOURS["no rebound"], lw=8, alpha=0.5,
-               label="No rebound"),
-        Line2D([0], [0], color=COLOURS["rebound"], lw=8, alpha=0.5,
-               label="Rebound"),
-    ]
-    fig.legend(handles=legend_patches,
-               loc="lower center", ncol=2, fontsize=8,
-               frameon=False, bbox_to_anchor=(0.5, -0.04))
-    fig.suptitle("Emissions under Power System Scenarios", fontsize=11,
-                 fontweight="bold", y=1.01)
-    plt.tight_layout()
-    out = FIGURES_DIR / "emissions_power_scenarios.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    print(f"Saved → {out}")
-    plt.show()
-
-
-
-
-# ── Main ───────────────────────────────────────────────────────────────────────
-def main():
-    plt.style.use("default")
-
-    print("Loading data …")
-    df = pd.read_csv(PREDS_FILE)
-    df = add_policy_factors(df)
-
- 
-
-    # ------------------------------------------------------------------
-    # For plots 2 & 3 the R script uses df_gbl (a pre-aggregated global
-    # emissions frame with a `Value` column).  If your CSV already
-    # has `Value`, the same df can be used directly.
-    # ------------------------------------------------------------------
-    df_gbl = df.copy()   # adjust if your global emissions are in a separate file
-
-    # Plot 2: Emissions density by power-system scenarios
-    plot_emissions_power_scenarios(df_gbl)
-
-if __name__ == "__main__":
-    main()
+# %%
